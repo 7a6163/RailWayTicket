@@ -65,6 +65,12 @@ class BuyTicket:
     # 第一次請求 主要取得session
     @retry(stop_max_attempt_number=10)
     def FirstRequest(self):
+        # 如果訂票還沒完成 就清空訂票資訊
+        if not self.IsGoSuccess:
+            self.mainWindow.Go_resultMsg.setText(unicode('', "utf-8"))
+        if not self.IsBackSuccess:
+            self.mainWindow.Back_resultMsg.setText(unicode('', "utf-8"))
+
         # self.PrintAllVariable()
         # ==================
         # 輸入基本資料頁
