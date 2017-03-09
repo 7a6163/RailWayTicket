@@ -23,6 +23,7 @@ VPN.py              執行VPN
 如何安裝
 -----------------------------
 step 1.
+````
     下載安裝OpenVPN 選擇Installer, Windows Vista and later
     https://openvpn.net/index.php/open-source/downloads.html
 
@@ -30,16 +31,20 @@ step 1.
     右鍵點擊openvpn.exe ->內容 ->相容性頁籤 ->將"以系統管理員的身份執行此程式"勾選
 
 Step2.
+
     安裝Anaconda2  python2.7版本
     安裝Keras 1.22版本
 
 Step3.
+
     安裝以下package
     conda install -c https://conda.binstar.org/menpo opencv
     PyQt4
     下載phantomjs.exe 並將目錄設定到環境變數
+    pip install retrying
 
 Step4.
+
     設置keras運行環境
     Keras的相關設定請參考這篇
     https://keras-cn.readthedocs.io/en/latest/getting_started/keras_windows/
