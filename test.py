@@ -3,12 +3,20 @@ from Image import Image
 import requests
 import kerasInitModel
 import numpy as np
+import threading
+import time
+from concurrent import futures
+import multiprocessing
+import Queue
 
 letters = list('0123456789')
 
-model = kerasInitModel.LoadModel()
-model.load_weights("model/model.h5")
-for i in range(10):
+
+start_time = time.time()
+
+def do():
+    model = kerasInitModel.LoadModel()
+    model.load_weights("model/model.h5")
     req = requests.get('http://railway.hinet.net/ImageOut.jsp')
     x = Image(req.content)
     imgs = x.StartProcess()
@@ -23,4 +31,13 @@ for i in range(10):
     for c in classes:
         result.append(letters[c])
     print(''.join(result).upper())
+    print("--- %s seconds ---" % (time.time() - start_time))
+
+
+
+for i in range(10):
+    do()
+
+
+
 

@@ -4,10 +4,14 @@ from PIL import Image
 from Image import Image as CVImg
 from PyQt4 import QtCore, QtGui
 from StringIO import StringIO
-import re
+import re,kerasInitModel
+import numpy as np
 
 class BuyTicket:
     def __init__(self, mainWindow):
+        # 載入模型
+        self.model = kerasInitModel.LoadModel()
+        self.model.load_weights("model/model.h5")
 
         self.mainWindow = mainWindow
         # 身份證字號
@@ -41,24 +45,37 @@ class BuyTicket:
         self.Back_Kind = self.GetComboboxValue(mainWindow.cb_Back_Kind)
         # 回程票數
         self.Back_Num = unicode(mainWindow.cb_Back_Num.currentText())
-
-
+        # 去程是否完成訂票流程
+        self.IsGoSuccess = False
+        # 回程是否完成訂票流程
+        self.IsBackSuccess = False
+        # http請求的表頭
+        self.headers = {'Content-Type': 'application/x-www-form-urlencoded',
+                   'Referer': 'http://railway.hinet.net/ctkind2.htm'
+                   }
+    # 由MainWindow的button click事件呼叫Start() 再進行訂票
     def Start(self):
+        self.FirstRequest()
+
+    # 第一次請求 主要取得session
+    def FirstRequest(self):
         # self.PrintAllVariable()
         # ==================
         # 輸入基本資料頁
         # ==================
         url = 'http://railway.hinet.net/check_ctkind2.jsp'
-        headers = {'Content-Type': 'application/x-www-form-urlencoded',
-                   'Referer': 'http://railway.hinet.net/ctkind2.htm'
-                  }
         # # 取得post的參數
         data = self.GetQueryData()
         s = requests.Session()
-        result = s.post(url,data=data, headers=headers)
+        result = s.post(url, data=data, headers=self.headers)
         result.encoding = 'big5'
         # print(result.text)
 
+        self.SecondRequest(s)
+
+
+    # 第二次請求 取得驗證碼並解析
+    def SecondRequest(self,s):
         # =====================
         # 填寫驗證碼頁面
         # =====================
@@ -70,44 +87,86 @@ class BuyTicket:
         im.save(io, format='png')
         qimg = QtGui.QImage.fromData(io.getvalue())
         self.mainWindow.captchaPic.setPixmap(QtGui.QPixmap(qimg))
+        self.mainWindow.logMsg('解析驗證碼中．．．')
         QtGui.QApplication.processEvents()
+        x = CVImg(req.content)
+        imgs = x.StartProcess()  # 取得處理完後的驗證碼圖片陣列
 
-        num, ok = QtGui.QInputDialog.getText(self.mainWindow, u"驗證碼", u"請輸入驗證碼")
-        if ok:
-            # ===============================
-            # 來回票訂票結果
-            # ===============================
-            # 去程/單程訂票結果
+        # 將圖片陣列轉成keras可處理格式
+        data = np.empty((len(imgs), 50, 50, 3), dtype="float32")
+        for index, img in enumerate(imgs):
+            arr = np.asarray(img, dtype="float32") / 255.0  # 將黑白圖片轉成1,0陣列 原本是0,255
+            data[index, :, :, :] = arr
+
+        classes = self.model.predict_classes(data)
+        result = []
+        letters = list('0123456789')
+        for c in classes:
+            result.append(letters[c])
+        answer = ''.join(result).upper()
+        self.mainWindow.logMsg('驗證碼解答: ' + answer + '\n')
+
+        # num, ok = QtGui.QInputDialog.getText(self.mainWindow, u"驗證碼", u"請輸入驗證碼")
+
+        if len(answer) >= 5:
+            self.ThirdRequest(s,answer)
+        else:
+            self.SecondRequest(s)
+
+    # 第三次請求 執行訂票動作
+    def ThirdRequest(self,s,answer):
+        # ===============================
+        # 來回票訂票結果
+        # ===============================
+
+        # 去程/單程訂票結果
+        if not self.IsGoSuccess: # 判斷是否完成訂票
             dateType = self.checkDateType(self.Go_Date)
-            if dateType =='ctkind':
+            if dateType == 'ctkind':
                 url = 'http://railway.hinet.net/ctkind11.jsp'
-            elif dateType =='order_kind':
+            elif dateType == 'order_kind':
                 url = 'http://railway.hinet.net/order_kind1.jsp'
-            #如果是單程票 returnTicket是0 若是雙程票 returnTicket=1
-            data = self.GetQueryData(type=2, returnTicket=1 if self.IsTwoWay else 0, randInput=num)
+            # 如果是單程票 returnTicket是0 若是雙程票 returnTicket=1
+            data = self.GetQueryData(type=2, returnTicket=1 if self.IsTwoWay else 0, randInput=answer)
             # print(data)
-            result = s.get(url, params= data, headers=headers)
+            result = s.get(url, params=data, headers=self.headers)
             result.encoding = 'big5-hkscs'
             #  過濾出結果頁的html訊息
-            GoreturnMsg = self.htmlRegexMatchResult(result.text,dateType)
-            self.mainWindow.Go_resultMsg.setText(unicode(GoreturnMsg,"utf-8"))
-            self.mainWindow.logMsg(result.text)
-            self.mainWindow.logMsg('====================================\n')
-            # 有勾選雙程票才要跑這段
-            if self.IsTwoWay:
-                #  回程訂票結果
-                dateType = self.checkDateType(self.Back_Date)
-                if dateType =='ctkind':
-                    url = 'http://railway.hinet.net/ctkind11.jsp'
-                elif dateType =='order_kind':
-                    url = 'http://railway.hinet.net/order_kind1.jsp'
-                data2 = self.GetQueryData(type=2, returnTicket=2, randInput=num)
-                result = s.get(url, params=data2, headers=headers)
-                result.encoding = 'big5-hkscs'
-                self.mainWindow.logMsg(result.text)
-                #  過濾出結果頁的html訊息
-                BackreturnMsg = self.htmlRegexMatchResult(result.text,dateType)
-                self.mainWindow.Back_resultMsg.setText(unicode(BackreturnMsg,"utf-8"))
+            GoreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
+            self.mainWindow.Go_resultMsg.setText(unicode(GoreturnMsg, "utf-8"))
+            # self.mainWindow.logMsg(result.text)
+            # self.mainWindow.logMsg('====================================\n')
+
+        # 有勾選雙程票 且未完成訂票才要跑這段
+        if self.IsTwoWay and not self.IsBackSuccess:
+            #  回程訂票結果
+            dateType = self.checkDateType(self.Back_Date)
+            if dateType == 'ctkind':
+                url = 'http://railway.hinet.net/ctkind11.jsp'
+            elif dateType == 'order_kind':
+                url = 'http://railway.hinet.net/order_kind1.jsp'
+            data2 = self.GetQueryData(type=2, returnTicket=2, randInput=answer)
+            result = s.get(url, params=data2, headers=self.headers)
+            result.encoding = 'big5-hkscs'
+            # self.mainWindow.logMsg(result.text)
+            #  過濾出結果頁的html訊息
+            BackreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
+            self.mainWindow.Back_resultMsg.setText(unicode(BackreturnMsg, "utf-8"))
+
+        # 如果其中一個訂票沒完成 就再跑一次
+        if not self.IsGoSuccess or not self.IsBackSuccess:
+            self.SecondRequest(s)
+
+    # ======================================其他method==========================================
+    # 依據回傳結果 判斷是否完成訂票 如果完成 就將self.IsGoSuccess或self.IsBackSuccess設為True
+
+    def CheckIsSuccess(self,msg, sendType):
+       '''
+       :param msg: 訂票結果回傳的訊息
+       :param type: 是去程或回程
+       :return:
+       '''
+       a=1
 
 
     # 印出所有參數 Debug用
@@ -176,15 +235,15 @@ class BuyTicket:
     # 日期流水號在11之前跟之後 回傳的html不一樣 所以要分開判斷
     def htmlRegexMatchResult(self,html,dateType):
         if html.find(u"亂數號碼錯誤") > -1:
-            result = "驗證碼錯誤"
+            result = ReturnMsg.captchaErr
         elif html.find(u"身分證字號錯誤") > -1:
-            result = "身份證字號錯誤"
+            result = ReturnMsg.IdErr
         elif html.find(u"此期間訂票額滿") > -1:
-            result = "此期間訂票額滿，\n或無指定條件之車次"
+            result = ReturnMsg.NoSeat
         elif html.find(u"該車種已訂票額滿") > -1:
-            result = "【該時段、該車種已訂票額滿】\n─ 請改訂其他時段、車種乘車票"
+            result = ReturnMsg.NoTrain
         elif html.find(u'訂票日期錯誤或內容格式錯誤') > -1:
-            result = "訂票日期錯誤或內容格式錯誤"
+            result = ReturnMsg.DateErr
         elif html.find(u"您的車票已訂到") > -1:
             if dateType == 'order_kind':
                 regex = r"<span id='spanOrderCode'[^>]*>(?P<code>\d*).*車次：</span> <span class='hv1 blue01 bold01'>(?P<trainNumber>\d*).*車種：</span> <span class='hv1 blue01 bold01'>(?P<kind>[自強|莒光|復興]*)"
@@ -196,13 +255,27 @@ class BuyTicket:
                 pass
             match = re.search(regex.decode('utf-8'), html)
 
-            if match is not None:
-                result = str.format("您的車票已訂到\n電腦代碼:{} \n車次:{}  車種:{}",
-                                    match.group('code'), match.group('trainNumber'),
-                                    match.group('kind').encode('utf-8'))
-            else:
-                result = "您的車票已訂到"
+            result = ReturnMsg.success(match)
         else:
-            result = "查無回傳資料"
+            result = ReturnMsg.NoReturn
 
         return result
+
+
+class ReturnMsg:
+    captchaErr = "驗證碼錯誤"
+    IdErr = "身份證字號錯誤"
+    NoSeat = "此期間訂票額滿，\n或無指定條件之車次"
+    NoTrain = "【該時段、該車種已訂票額滿】\n─ 請改訂其他時段、車種乘車票"
+    DateErr = "訂票日期錯誤或內容格式錯誤"
+    NoReturn = "查無回傳資料"
+    @staticmethod
+    def success(match):
+        if match is not None:
+            return str.format("您的車票已訂到\n電腦代碼:{} \n車次:{}  車種:{}",
+                                match.group('code'), match.group('trainNumber'),
+                                match.group('kind').encode('utf-8'))
+        else:
+            return "您的車票已訂到"
+
+
