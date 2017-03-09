@@ -87,7 +87,7 @@ class BuyTicket:
         im.save(io, format='png')
         qimg = QtGui.QImage.fromData(io.getvalue())
         self.mainWindow.captchaPic.setPixmap(QtGui.QPixmap(qimg))
-        self.mainWindow.logMsg('解析驗證碼中．．．')
+        self.mainWindow.logMsg('\n解析驗證碼中．．．')
         QtGui.QApplication.processEvents()
         x = CVImg(req.content)
         imgs = x.StartProcess()  # 取得處理完後的驗證碼圖片陣列
@@ -134,6 +134,10 @@ class BuyTicket:
             #  過濾出結果頁的html訊息
             GoreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
             self.mainWindow.Go_resultMsg.setText(unicode(GoreturnMsg, "utf-8"))
+            self.mainWindow.logMsg('去程訂票結果：\n'+unicode(GoreturnMsg, "utf-8"))
+            # 如果回傳訊息是驗證碼錯誤以外的訊息 就將flag設為True
+            if GoreturnMsg is not ReturnMsg.captchaErr:
+                self.IsGoSuccess = True
             # self.mainWindow.logMsg(result.text)
             # self.mainWindow.logMsg('====================================\n')
 
@@ -152,22 +156,16 @@ class BuyTicket:
             #  過濾出結果頁的html訊息
             BackreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
             self.mainWindow.Back_resultMsg.setText(unicode(BackreturnMsg, "utf-8"))
+            self.mainWindow.logMsg('去程訂票結果：\n'+unicode(BackreturnMsg, "utf-8"))
+            # 如果回傳訊息是驗證碼錯誤以外的訊息 就將flag設為True
+            if GoreturnMsg is not ReturnMsg.captchaErr:
+                self.IsBackSuccess = True
 
         # 如果其中一個訂票沒完成 就再跑一次
         if not self.IsGoSuccess or not self.IsBackSuccess:
             self.SecondRequest(s)
 
     # ======================================其他method==========================================
-    # 依據回傳結果 判斷是否完成訂票 如果完成 就將self.IsGoSuccess或self.IsBackSuccess設為True
-
-    def CheckIsSuccess(self,msg, sendType):
-       '''
-       :param msg: 訂票結果回傳的訊息
-       :param type: 是去程或回程
-       :return:
-       '''
-       a=1
-
 
     # 印出所有參數 Debug用
     def PrintAllVariable(self):

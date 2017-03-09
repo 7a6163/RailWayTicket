@@ -56,16 +56,16 @@ class VPN:
             # 依照總分欄位 排序servers 取出最快的server
             winner = supported[0]
 
-        self.mainWindow.logMsg("\n== Best server ==")
+        self.mainWindow.logMsg("\n== 選擇的伺服器 ==")
         #  [:-1]是指不取最後一欄
         pairs = list(zip(labels, winner))[:-1]
         for (l, d) in pairs[:4]:
             self.mainWindow.logMsg(l + ': ' + d)
 
         self.mainWindow.logMsg(pairs[4][0] + ': ' + str(float(pairs[4][1]) / 10**6) + ' MBps')
-        self.mainWindow.logMsg("Country: " + pairs[5][1])
+        self.mainWindow.logMsg("國家: " + pairs[5][1])
 
-        self.mainWindow.logMsg("\nLaunching VPN...")
+        self.mainWindow.logMsg("\n啟動VPN中...")
 
         #  Debug用  將vpn config檔寫入txt檔
         # f = open(r'C:\Users\vi000\Desktop\vpn config.txt', 'w', encoding='UTF-8')
@@ -92,7 +92,7 @@ class VPN:
 
     def getVpnServerLists(self):
         try:
-            self.mainWindow.logMsg("====Start to getting VPN====")
+            self.mainWindow.logMsg("====開始取得VPN清單====")
             vpn_data = requests.get('http://www.vpngate.net/api/iphone/').text.replace('\r','')
             servers = [line.split(',') for line in vpn_data.split('\n')]
             labels = servers[1]
@@ -100,7 +100,7 @@ class VPN:
             servers = [s for s in servers[2:] if len(s) > 1]
         except Exception, e:
             print(e)
-            self.mainWindow.logMsg('Cannot get VPN servers data')
+            self.mainWindow.logMsg('無法取得VPN資料')
             exit(1)
 
         if self.index != -1:
@@ -108,14 +108,14 @@ class VPN:
         else:
             desired = servers
         found = len(desired)
-        self.mainWindow.logMsg('Found ' + str(found) + ' servers for country ' + self.country
+        self.mainWindow.logMsg('找到 ' + str(found) + ' 個伺服器  國家: ' + self.country
               if len(self.country) > 0
-              else 'Found ' + str(found) + ' servers')
+              else '找到 ' + str(found) + ' 個伺服器')
         if found == 0:
             exit(1)
 
         supported = [s for s in desired if len(s[-1]) > 0]
-        self.mainWindow.logMsg(str(len(supported)) + ' of these servers support OpenVPN')
+        self.mainWindow.logMsg(str(len(supported)) + ' 個伺服器支援 OpenVPN')
         return sorted(supported, key=lambda s: s[2], reverse=True),labels
 
     #  只有Linux會用到
@@ -126,7 +126,7 @@ class VPN:
                 pass
             while self.process.poll() != 0:
                 time.sleep(1)
-            self.mainWindow.logMsg('\nVPN terminated')
+            self.mainWindow.logMsg('\nVPN 中止')
 
     #  確認VPN有無連線上
     def testVPN(self):
