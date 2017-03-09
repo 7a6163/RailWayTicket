@@ -322,7 +322,10 @@ class FormWidget(QtGui.QWidget):
     # 將這視窗的內容pass到台鐵爬蟲 開始訂票程序
     def Start(self,mainWindow):
         do = BuyTicket(mainWindow)
+        # disable開始按鈕
+        self.submitBtn.setDisabled(True)
         do.Start()
+        self.submitBtn.setDisabled(False)
     # 開啟VPN
     def OpenVPN(self,mainWindow):
         vpn = VPN(mainWindow)
