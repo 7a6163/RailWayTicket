@@ -7,7 +7,9 @@ from StringIO import StringIO
 import re,kerasInitModel
 import numpy as np
 from retrying import retry
+import Queue ,time, threading, datetime
 
+lock = threading.Lock()
 
 class BuyTicket:
     def __init__(self, mainWindow):
@@ -55,14 +57,23 @@ class BuyTicket:
         self.headers = {'Content-Type': 'application/x-www-form-urlencoded',
                    'Referer': 'http://railway.hinet.net/ctkind2.htm'
                    }
-        # 重試次數
-        self.retryTimes = 0
 
     # 由MainWindow的button click事件呼叫Start() 再進行訂票
     def Start(self):
-        self.FirstRequest()
+        # 開始三個執行緒
+        thd1 = threading.Thread(target=self.FirstRequest(), name='Thd1', args=())
+        thd2 = threading.Thread(target=self.FirstRequest(), name='Thd2', args=())
+        thd3 = threading.Thread(target=self.FirstRequest(), name='Thd3', args=())
 
-    # 第一次請求 主要取得session
+        thd1.start()
+        thd2.start()
+        thd3.start()
+
+        # Wait for all threads to terminate.
+        while thd1.is_alive() or thd2.is_alive() or thd3.is_alive():
+            time.sleep(1)
+
+        # 第一次請求 主要取得session
     @retry(stop_max_attempt_number=10)
     def FirstRequest(self):
         # 如果訂票還沒完成 就清空訂票資訊
@@ -70,62 +81,67 @@ class BuyTicket:
             self.mainWindow.Go_resultMsg.setText(unicode('', "utf-8"))
         if not self.IsBackSuccess:
             self.mainWindow.Back_resultMsg.setText(unicode('', "utf-8"))
+        # 用來中止線程 如果去回程有一個還沒訂完票 就再執行thread
+        if not self.IsGoSuccess or not self.IsBackSuccess:
 
-        # self.PrintAllVariable()
-        # ==================
-        # 輸入基本資料頁
-        # ==================
-        url = 'http://railway.hinet.net/check_ctkind2.jsp'
-        # # 取得post的參數
-        data = self.GetQueryData()
-        s = requests.Session()
-        result = s.post(url, data=data, headers=self.headers)
-        result.encoding = 'big5'
-        result.raise_for_status()
-        # print(result.text)
+            # self.PrintAllVariable()
+            # ==================
+            # 輸入基本資料頁
+            # ==================
+            url = 'http://railway.hinet.net/check_ctkind2.jsp'
+            # # 取得post的參數
+            data = self.GetQueryData()
+            s = requests.Session()
+            result = s.post(url, data=data, headers=self.headers)
+            result.encoding = 'big5'
+            result.raise_for_status()
+            # print(result.text)
 
-        self.SecondRequest(s)
+            self.SecondRequest(s)
 
 
     # 第二次請求 取得驗證碼並解析
     @retry(stop_max_attempt_number=10)
     def SecondRequest(self,s):
-        # =====================
-        # 填寫驗證碼頁面
-        # =====================
-        # 取得驗證碼圖片
-        req = s.get('http://railway.hinet.net/ImageOut.jsp')
-        req.raise_for_status()
-        im = Image.open(StringIO(req.content)).convert('RGB')
-        io = StringIO()
-        im.save(io, format='png')
-        qimg = QtGui.QImage.fromData(io.getvalue())
-        self.mainWindow.captchaPic.setPixmap(QtGui.QPixmap(qimg))
-        self.mainWindow.logMsg('\n解析驗證碼中．．．')
-        QtGui.QApplication.processEvents()
-        x = CVImg(req.content)
-        imgs = x.StartProcess()  # 取得處理完後的驗證碼圖片陣列
 
-        # 將圖片陣列轉成keras可處理格式
-        data = np.empty((len(imgs), 50, 50, 3), dtype="float32")
-        for index, img in enumerate(imgs):
-            arr = np.asarray(img, dtype="float32") / 255.0  # 將黑白圖片轉成1,0陣列 原本是0,255
-            data[index, :, :, :] = arr
+        if not self.IsGoSuccess or not self.IsBackSuccess:
 
-        classes = self.model.predict_classes(data)
-        result = []
-        letters = list('0123456789')
-        for c in classes:
-            result.append(letters[c])
-        answer = ''.join(result).upper()
-        self.mainWindow.logMsg('驗證碼解答: ' + answer + '\n')
+            # =====================
+            # 填寫驗證碼頁面
+            # =====================
+            # 取得驗證碼圖片
+            req = s.get('http://railway.hinet.net/ImageOut.jsp')
+            req.raise_for_status()
+            im = Image.open(StringIO(req.content)).convert('RGB')
+            io = StringIO()
+            im.save(io, format='png')
+            qimg = QtGui.QImage.fromData(io.getvalue())
+            self.mainWindow.captchaPic.setPixmap(QtGui.QPixmap(qimg))
+            self.mainWindow.logMsg('\n解析驗證碼中．．．')
+            QtGui.QApplication.processEvents()
+            x = CVImg(req.content)
+            imgs = x.StartProcess()  # 取得處理完後的驗證碼圖片陣列
 
-        # num, ok = QtGui.QInputDialog.getText(self.mainWindow, u"驗證碼", u"請輸入驗證碼")
+            # 將圖片陣列轉成keras可處理格式
+            data = np.empty((len(imgs), 50, 50, 3), dtype="float32")
+            for index, img in enumerate(imgs):
+                arr = np.asarray(img, dtype="float32") / 255.0  # 將黑白圖片轉成1,0陣列 原本是0,255
+                data[index, :, :, :] = arr
 
-        if len(answer) >= 5:
-            self.ThirdRequest(s,answer)
-        else:
-            self.SecondRequest(s)
+            classes = self.model.predict_classes(data)
+            result = []
+            letters = list('0123456789')
+            for c in classes:
+                result.append(letters[c])
+            answer = ''.join(result).upper()
+            self.mainWindow.logMsg('驗證碼解答: ' + answer + '\n')
+
+            # num, ok = QtGui.QInputDialog.getText(self.mainWindow, u"驗證碼", u"請輸入驗證碼")
+
+            if len(answer) >= 5:
+                self.ThirdRequest(s,answer)
+            else:
+                self.SecondRequest(s)
 
     # 第三次請求 執行訂票動作
     @retry(stop_max_attempt_number=10)
@@ -149,11 +165,16 @@ class BuyTicket:
             result.raise_for_status()
             #  過濾出結果頁的html訊息
             GoreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
+
+            lock.acquire()
+
             self.mainWindow.Go_resultMsg.setText(unicode(GoreturnMsg, "utf-8"))
             self.mainWindow.logMsg('去程訂票結果：\n'+unicode(GoreturnMsg, "utf-8"))
             # 如果回傳訊息是驗證碼錯誤以外的訊息 就將flag設為True
             if GoreturnMsg is not ReturnMsg.captchaErr:
                 self.IsGoSuccess = True
+
+            lock.release()
             # self.mainWindow.logMsg(result.text)
             # self.mainWindow.logMsg('====================================\n')
 
@@ -172,11 +193,13 @@ class BuyTicket:
             # self.mainWindow.logMsg(result.text)
             #  過濾出結果頁的html訊息
             BackreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
+            lock.acquire()
             self.mainWindow.Back_resultMsg.setText(unicode(BackreturnMsg, "utf-8"))
             self.mainWindow.logMsg('去程訂票結果：\n'+unicode(BackreturnMsg, "utf-8"))
             # 如果回傳訊息是驗證碼錯誤以外的訊息 就將flag設為True
             if GoreturnMsg is not ReturnMsg.captchaErr:
                 self.IsBackSuccess = True
+            lock.release()
 
         # 如果其中一個訂票沒完成 就再跑一次
         if not self.IsGoSuccess or not self.IsBackSuccess:
