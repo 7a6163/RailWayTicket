@@ -127,8 +127,9 @@ class BuyTicket:
             for index, img in enumerate(imgs):
                 arr = np.asarray(img, dtype="float32") / 255.0  # 將黑白圖片轉成1,0陣列 原本是0,255
                 data[index, :, :, :] = arr
-
+            lock.acquire()
             classes = self.model.predict_classes(data)
+            lock.release()
             result = []
             letters = list('0123456789')
             for c in classes:
