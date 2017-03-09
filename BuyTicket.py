@@ -6,6 +6,8 @@ from PyQt4 import QtCore, QtGui
 from StringIO import StringIO
 import re,kerasInitModel
 import numpy as np
+from retrying import retry
+
 
 class BuyTicket:
     def __init__(self, mainWindow):
@@ -53,11 +55,15 @@ class BuyTicket:
         self.headers = {'Content-Type': 'application/x-www-form-urlencoded',
                    'Referer': 'http://railway.hinet.net/ctkind2.htm'
                    }
+        # 重試次數
+        self.retryTimes = 0
+
     # 由MainWindow的button click事件呼叫Start() 再進行訂票
     def Start(self):
         self.FirstRequest()
 
     # 第一次請求 主要取得session
+    @retry(stop_max_attempt_number=10)
     def FirstRequest(self):
         # self.PrintAllVariable()
         # ==================
@@ -69,19 +75,21 @@ class BuyTicket:
         s = requests.Session()
         result = s.post(url, data=data, headers=self.headers)
         result.encoding = 'big5'
+        result.raise_for_status()
         # print(result.text)
 
         self.SecondRequest(s)
 
 
     # 第二次請求 取得驗證碼並解析
+    @retry(stop_max_attempt_number=10)
     def SecondRequest(self,s):
         # =====================
         # 填寫驗證碼頁面
         # =====================
         # 取得驗證碼圖片
         req = s.get('http://railway.hinet.net/ImageOut.jsp')
-
+        req.raise_for_status()
         im = Image.open(StringIO(req.content)).convert('RGB')
         io = StringIO()
         im.save(io, format='png')
@@ -114,6 +122,7 @@ class BuyTicket:
             self.SecondRequest(s)
 
     # 第三次請求 執行訂票動作
+    @retry(stop_max_attempt_number=10)
     def ThirdRequest(self,s,answer):
         # ===============================
         # 來回票訂票結果
@@ -131,6 +140,7 @@ class BuyTicket:
             # print(data)
             result = s.get(url, params=data, headers=self.headers)
             result.encoding = 'big5-hkscs'
+            result.raise_for_status()
             #  過濾出結果頁的html訊息
             GoreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
             self.mainWindow.Go_resultMsg.setText(unicode(GoreturnMsg, "utf-8"))
@@ -152,6 +162,7 @@ class BuyTicket:
             data2 = self.GetQueryData(type=2, returnTicket=2, randInput=answer)
             result = s.get(url, params=data2, headers=self.headers)
             result.encoding = 'big5-hkscs'
+            result.raise_for_status()
             # self.mainWindow.logMsg(result.text)
             #  過濾出結果頁的html訊息
             BackreturnMsg = self.htmlRegexMatchResult(result.text, dateType)
